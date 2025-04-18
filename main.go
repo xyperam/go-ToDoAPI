@@ -62,9 +62,27 @@ func getTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	completedTasks := r.URL.Query().Get("completed")
+	var filteredTasks []Task
+
+	if completedTasks != "" {
+		completed, err := strconv.ParseBool(completedTasks)
+		if err != nil {
+			http.Error(w, "Invalid query parameter", http.StatusBadRequest)
+			return
+		}
+		for _, task := range tasks {
+			if task.Completed == completed {
+				filteredTasks = append(filteredTasks, task)
+			}
+		}
+	} else {
+		filteredTasks = tasks
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
-	if err := json.NewEncoder(w).Encode(tasks); err != nil {
+	if err := json.NewEncoder(w).Encode(filteredTasks); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
 	}
@@ -155,6 +173,7 @@ func updateTask(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Failed to Update Task", http.StatusInternalServerError)
 				return
 			}
+			w.Write([]byte("Task Updated successfully"))
 			return
 		}
 	}
