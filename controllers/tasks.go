@@ -2,23 +2,23 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"go-web-server/models" // Mengimpor models untuk tipe Task
 	"go-web-server/utils"  // Mengimpor utils untuk akses Tasks dan fungsi terkait
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
 )
 
 func GetTasks(w http.ResponseWriter, r *http.Request) {
 	// Panggil LoadTasksFromFile dari utils untuk membaca data dari file
-	if err := utils.LoadTasksFromFile(); err != nil {
-		http.Error(w, "Failed to load tasks", http.StatusInternalServerError)
-		return
-	}
 
 	completedTasks := r.URL.Query().Get("completed")
-	var filteredTasks []models.Task
+	query := utils.DB
+
+	var tasks []models.Task
 
 	// Filter berdasarkan parameter "completed" jika ada
 	if completedTasks != "" {
@@ -27,74 +27,62 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid query parameter", http.StatusBadRequest)
 			return
 		}
-		// Filter tasks berdasarkan status completed
-		for _, task := range utils.Tasks {
-			if task.Completed == completed {
-				filteredTasks = append(filteredTasks, task)
-			}
-		}
-	} else {
-		// Jika tidak ada filter, ambil semua tasks
-		filteredTasks = utils.Tasks
+		query = query.Where("completed = ?", completed)
+	}
+	//ambil data dari db
+	if err := query.Find(&tasks).Error; err != nil {
+		http.Error(w, "Fao;ed tp retrieve tasks", http.StatusInternalServerError)
+		return
 	}
 
 	// Set header Content-Type untuk respons JSON
 	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tasks) // Kirim data tasks sebagai JSON
 
-	// Kirim response dalam format JSON
-	if err := json.NewEncoder(w).Encode(filteredTasks); err != nil {
-		http.Error(w, "Error encoding response", http.StatusInternalServerError)
-		return
-	}
 }
 
 func GetTaskByID(w http.ResponseWriter, r *http.Request) {
 	// Panggil LoadTasksFromFile untuk membaca data dari file
-	if err := utils.LoadTasksFromFile(); err != nil {
-		http.Error(w, "Failed to load tasks", http.StatusInternalServerError)
-		return
-	}
+	var task models.Task
 	id := chi.URLParam(r, "id")
 	taskID, err := strconv.Atoi(id)
 	if err != nil {
 		http.Error(w, "Invalid taskID", http.StatusBadRequest)
 		return
 	}
-	// Cari task berdasarkan ID
-	for _, t := range utils.Tasks {
-		if t.ID == taskID {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			if err := json.NewEncoder(w).Encode(t); err != nil {
-				http.Error(w, "Error encoding response", http.StatusInternalServerError)
-				return
-			}
-			return
+
+	if err := utils.DB.First(&task, taskID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			http.Error(w, "Task not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to retrieve task", http.StatusInternalServerError)
 		}
+		return
+	}
+	// Cari task berdasarkan ID
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(task); err != nil {
+		http.Error(w, "Failed to encode task", http.StatusInternalServerError)
+		return
 	}
 }
 
 // Create Task
 func CreateTask(w http.ResponseWriter, r *http.Request) {
 	var task models.Task // Gunakan models.Task
-	// Panggil LoadTasksFromFile untuk membaca data dari file
-	if err := utils.LoadTasksFromFile(); err != nil {
-		http.Error(w, "Failed to load tasks", http.StatusInternalServerError)
-		return
-	}
+
 	// Decode data dari body request
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
-	// Set ID baru untuk task
-	task.ID = utils.TaskID
-	utils.TaskID++
-	// Tambahkan task ke dalam list
-	utils.Tasks = append(utils.Tasks, task)
+	fmt.Printf("Task: %+v\n", task)
 
-	// Simpan tasks ke file
-	if err := utils.SaveTasksToFile(); err != nil {
+	// Simpan tasks ke DB
+	result := utils.DB.Create(&task)
+	if result.Error != nil {
 		http.Error(w, "Failed to save task", http.StatusInternalServerError)
 		return
 	}
@@ -107,13 +95,6 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 // Update Task
 func UpdateTask(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-
-	// Panggil LoadTasksFromFile untuk membaca data dari file
-	if err := utils.LoadTasksFromFile(); err != nil {
-		http.Error(w, "Failed to load tasks", http.StatusInternalServerError)
-		return
-	}
-
 	// Convert id ke int
 	taskID, err := strconv.Atoi(id)
 	if err != nil {
@@ -128,30 +109,34 @@ func UpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cari dan update task berdasarkan ID
-	for i, t := range utils.Tasks {
-		if t.ID == taskID {
-			utils.Tasks[i].Title = updatedTask.Title
-			utils.Tasks[i].Description = updatedTask.Description
-			utils.Tasks[i].Completed = updatedTask.Completed
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			// Simpan perubahan ke file
-			if err := utils.SaveTasksToFile(); err != nil {
-				http.Error(w, "Failed to Update Task", http.StatusInternalServerError)
-				return
-			}
-			w.Write([]byte("Task Updated successfully"))
-			return
+	var task models.Task
+	if err := utils.DB.First(&task, taskID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			http.Error(w, "Task not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to retrieve task", http.StatusInternalServerError)
 		}
+		return
+	}
+	//update task
+	task.Title = updatedTask.Title
+	task.Description = updatedTask.Description
+	task.Completed = updatedTask.Completed
+	if err := utils.DB.Save(&task).Error; err != nil {
+		http.Error(w, "Failed to update task", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	// Kirim response JSON
+	if err := json.NewEncoder(w).Encode(task); err != nil {
+		http.Error(w, "Failed to encode task", http.StatusInternalServerError)
+		return
 	}
 }
 
 func DeleteTask(w http.ResponseWriter, r *http.Request) {
 	// Panggil LoadTasksFromFile untuk membaca data dari file
-	if err := utils.LoadTasksFromFile(); err != nil {
-		http.Error(w, "Failed to load tasks", http.StatusInternalServerError)
-		return
-	}
 	id := chi.URLParam(r, "id")
 	taskID, err := strconv.Atoi(id)
 	if err != nil {
@@ -159,18 +144,20 @@ func DeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Cari task berdasarkan ID dan hapus
-	for i, t := range utils.Tasks {
-		if t.ID == taskID {
-			utils.Tasks = append(utils.Tasks[:i], utils.Tasks[i+1:]...)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			// Simpan perubahan ke file
-			if err := utils.SaveTasksToFile(); err != nil {
-				http.Error(w, "Failed to delete task", http.StatusInternalServerError)
-				return
-			}
-			w.Write([]byte("Task deleted successfully"))
-			return
+	var task models.Task
+	if err := utils.DB.First(&task, taskID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			http.Error(w, "Task not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to retrieve task", http.StatusInternalServerError)
 		}
+		return
 	}
+	if err := utils.DB.Delete(&task).Error; err != nil {
+		http.Error(w, "Failed to delete task", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent) // Set status 204 No Content
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Task deleted successfully"}) // Kirim response JSON
 }

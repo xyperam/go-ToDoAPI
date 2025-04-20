@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	utils.UpdateTaskID() // Inisialisasi ID Task
+	utils.ConnectDatabase() // Inisialisasi ID Task
 
 	r := routes.SetupRoutes()
 
