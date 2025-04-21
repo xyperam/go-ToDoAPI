@@ -89,7 +89,7 @@ func LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//Generate JWT
-	token, err := utils.GenerateJWT(user.Username)
+	token, err := utils.GenerateJWT(&user)
 	if err != nil {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
