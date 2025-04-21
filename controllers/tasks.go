@@ -80,6 +80,11 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Printf("Task: %+v\n", task)
 
+	//validasi title tidak boleh kosong
+	if task.Title == "" {
+		http.Error(w, "Title cannot be empty", http.StatusBadRequest)
+		return
+	}
 	// Simpan tasks ke DB
 	result := utils.DB.Create(&task)
 	if result.Error != nil {

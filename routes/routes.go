@@ -16,6 +16,7 @@ func SetupRoutes() *chi.Mux {
 	r.Post("/tasks", controllers.CreateTask)
 	r.Put("/tasks/{id}", controllers.UpdateTask)
 	r.Delete("/tasks/{id}", controllers.DeleteTask)
-
+	r.Post("/register", controllers.RegisterUser)
+	r.Post("/login", controllers.LoginUser)
 	return r
 }

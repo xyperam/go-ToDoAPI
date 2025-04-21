@@ -20,7 +20,7 @@ func ConnectDatabase() {
 	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 
 	//auto-migrate model
-	if err := database.AutoMigrate(&models.Task{}); err != nil {
+	if err := database.AutoMigrate(&models.User{}, &models.Task{}); err != nil {
 		log.Fatal("Failed to auto-migrate database:", err)
 	}
 
